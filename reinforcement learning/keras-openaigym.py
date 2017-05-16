@@ -1,16 +1,11 @@
 # DQN for OpenAI Gym environments
 #
 # additions:
-# - batch updates
+# - vectorized batch updates
 # - prioritized experience replay 	(not done)
-# - Double Q network
+# - Double Q network for more stable learning
 
 import numpy as np
-
-# batch_size = 3
-# x = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-# print np.random.choice(x[:5], size=batch_size, replace=False)
-# exit()
 
 import keras
 from keras.models import Sequential
@@ -88,6 +83,7 @@ class Agent():
 	def add_replay(self, state, action, reward, state_next, done):
 		self.replays[self.replay_n % self.replay_capacity] = np.array([state, action, reward, state_next, done])
 		self.replay_n += 1
+		
 
 	def select_replay_indices(self):
 		batch_size = min(self.batch_size, self.replay_n)
