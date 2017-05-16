@@ -5,16 +5,19 @@
 # - prioritized experience replay 	(not done)
 # - Double Q network
 
+import numpy as np
+
+# batch_size = 3
+# x = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+# print np.random.choice(x[:5], size=batch_size, replace=False)
+# exit()
+
 import keras
 from keras.models import Sequential
 from keras.layers import Conv2D, Dense, Activation, Flatten, Dropout, BatchNormalization
 from keras.optimizers import rmsprop
 
-import numpy as np
-
 import gym
-
-import random # not permanent ....
 
 ###########################
 ### Model Configuration ### 
@@ -49,14 +52,24 @@ class Agent():
 
 		self.model = model_fn(self.num_actions, self.state_shape)
 		self.model2 = model_fn(self.num_actions, self.state_shape) # double q network
-		self.replays = []
-		self.batch_size = 64
+		self.batch_size = 64 # replays used per learning cycle
 
-		# q-learning parameters
-		self.epsilon = 1
+		self.epsilon = 1 # chance to take a random action
 		self.min_epsilon = .01
-		self.epsilon_decay = lambda x: x*.995
+		self.epsilon_decay = lambda x: x*.995 # decays through this fn each learning cycle
 		self.gamma = .99	# long-term vs short-term reward
+
+		# experience replay
+		self.replay_capacity = 100000
+
+		replay_shape = np.array([np.zeros(self.state_shape), 0, 0, np.zeros(self.state_shape), False]).shape
+		replay_shape = list(replay_shape)
+		replay_shape.insert(0, self.replay_capacity)
+		replays_shape = tuple(replay_shape)
+
+		self.replays = np.zeros(replays_shape, dtype=object)
+		self.replay_n = 0
+		self.replays_full = False
 
 	#################
 	# Model methods #
@@ -73,7 +86,13 @@ class Agent():
 	#############################
 
 	def add_replay(self, state, action, reward, state_next, done):
-		self.replays.append([state, action, reward, state_next, done])
+		self.replays[self.replay_n % self.replay_capacity] = np.array([state, action, reward, state_next, done])
+		self.replay_n += 1
+
+	def select_replay_indices(self):
+		batch_size = min(self.batch_size, self.replay_n)
+		n = min(self.replay_n, self.replay_capacity)
+		return np.random.choice(n, size=batch_size, replace=False)
 
 	#######################
 	# Acting and Learning #
@@ -96,21 +115,20 @@ class Agent():
 			m1 = self.model2
 			m2 = self.model
 
-		batch_size = min(self.batch_size, len(self.replays))
-		random.shuffle(self.replays)
-		replay_batch = self.replays[:batch_size]
+		replay_batch_indices = self.select_replay_indices()
 
 		no_state = np.zeros(self.state_shape)
  
-		s = np.array([ replay[0] for replay in replay_batch ])
-		s_ = np.array([ (no_state if replay[3] is None else replay[3]) for replay in replay_batch ])
+		s = np.array([ self.replays[i][0] for i in replay_batch_indices ])
+		s_ = np.array([ (no_state if self.replays[i][3] is None else self.replays[i][3]) for i in replay_batch_indices ])
 		
 		p = m1.predict(s)
 		p_ = m1.predict(s_)
 		p2_ = m2.predict(s_)
 
-		for i in range(len(replay_batch)):
-			_, action, reward, _, done = self.replays[i]
+		i = 0
+		for replay_index in replay_batch_indices:
+			_, action, reward, _, done = self.replays[replay_index]
 
 			target = reward
 			if not done:
@@ -118,6 +136,7 @@ class Agent():
 				target += self.gamma*p2_[i][max_value_action]
 
 			p[i][action] = target
+			i += 1
 
 		m1.fit(s, p, epochs=1, verbose=0)
 
