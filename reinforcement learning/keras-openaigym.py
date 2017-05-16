@@ -90,11 +90,9 @@ class Agent():
 	def learn(self):
 		# randomly either learn on the first or second model
 		if np.random.rand() < .5:
-			print('1')
 			m1 = self.model
 			m2 = self.model2
 		else:
-			print('2')
 			m1 = self.model2
 			m2 = self.model
 
@@ -128,7 +126,8 @@ class Agent():
 		state = self.env.reset()
 
 		for t in range(self.max_steps_per_episode):
-			self.env.render()
+			if t > 3000:
+				self.env.render()
 
 			action = self.get_action(state)
 			state_next, reward, done, info = self.env.step(action)
@@ -145,7 +144,7 @@ class Agent():
 		print("episode: {}/{}, score: {}, epsilon: {}".format(episode_number, total_episodes, t, self.epsilon))
 
 
-	def play(self, episodes=2000):
+	def play(self, episodes=4000):
 		for episode in range(episodes):
 			self.one_episode(episode_number=episode, total_episodes=episodes)
 			if self.epsilon > self.min_epsilon:
