@@ -2,7 +2,8 @@
 #
 # additions:
 # - vectorized batch updates
-# - proportional prioritized experience replay
+# - sliding window experience replay
+# - prioritized experience replay proportional to error
 # - Double Q network for more stable learning
 
 import numpy as np
@@ -13,6 +14,7 @@ from keras.layers import Conv2D, Dense, Activation, Flatten, Dropout, BatchNorma
 from keras.optimizers import rmsprop
 
 import gym
+from gym import wrappers
 
 ###########################
 ### Model Configuration ### 
@@ -38,8 +40,10 @@ def simple(num_actions, state_shape):
 ############################################
 
 class Agent():
-	def __init__(self, game_string, model_fn, done_reward=0, max_steps_per_episode=5000):
+	def __init__(self, game_string, model_fn, done_reward=0, max_steps_per_episode=100000, monitor=False):
 		self.env = gym.make(game_string)
+		if monitor:
+			self.env = wrappers.Monitor(self.env, '/tmp/experiment', force=True)
 		self.num_actions = self.env.action_space.n
 		self.state_shape = self.env.reset().shape
 		self.max_steps_per_episode = max_steps_per_episode
@@ -181,13 +185,13 @@ class Agent():
 ### Create and run learner ###
 ##############################
 
-gym.envs.register(
-    id='CartPole-v2',
-    entry_point='gym.envs.classic_control:CartPoleEnv',
-    tags={'wrapper_config.TimeLimit.max_episode_steps': 5000},
-    reward_threshold=195.0,
-)
+# gym.envs.register(
+#     id='CartPole-v2',
+#     entry_point='gym.envs.classic_control:CartPoleEnv',
+#     tags={'wrapper_config.TimeLimit.max_episode_steps': 100000},
+#     reward_threshold=195.0,
+# )
 
-agent = Agent('CartPole-v2', simple)
+agent = Agent('CartPole-v1', simple, monitor=True)
 
 agent.play()
