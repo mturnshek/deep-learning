@@ -2,7 +2,7 @@
 #
 # additions:
 # - vectorized batch updates
-# - prioritized experience replay 	(not done)
+# - proportional prioritized experience replay
 # - Double Q network for more stable learning
 
 import numpy as np
@@ -57,7 +57,7 @@ class Agent():
 		# experience replay
 		self.replay_capacity = 100000
 
-		replay_shape = np.array([np.zeros(self.state_shape), 0, 0, np.zeros(self.state_shape), False]).shape
+		replay_shape = np.array([np.zeros(self.state_shape), 0, 0, np.zeros(self.state_shape), False, 0.0]).shape
 		replay_shape = list(replay_shape)
 		replay_shape.insert(0, self.replay_capacity)
 		replays_shape = tuple(replay_shape)
@@ -65,6 +65,9 @@ class Agent():
 		self.replays = np.zeros(replays_shape, dtype=object)
 		self.replay_n = 0
 		self.replays_full = False
+
+		# prioritized proportional experience replay
+		self.total_replay_error = 0.0
 
 	#################
 	# Model methods #
@@ -81,14 +84,18 @@ class Agent():
 	#############################
 
 	def add_replay(self, state, action, reward, state_next, done):
-		self.replays[self.replay_n % self.replay_capacity] = np.array([state, action, reward, state_next, done])
+		self.total_replay_error -= self.replays[self.replay_n % self.replay_capacity][5] # remove error from replaced
+		self.total_replay_error += reward
+		self.replays[self.replay_n % self.replay_capacity] = np.array([state, action, reward, state_next, done, reward])
 		self.replay_n += 1
-		
+
 
 	def select_replay_indices(self):
 		batch_size = min(self.batch_size, self.replay_n)
 		n = min(self.replay_n, self.replay_capacity)
-		return np.random.choice(n, size=batch_size, replace=False)
+		replay_errors = self.replays[:n][:, 5]
+		prioritization = np.multiply(replay_errors, 1/self.total_replay_error).astype(float)
+		return np.random.choice(n, size=batch_size, replace=False, p=prioritization)
 
 	#######################
 	# Acting and Learning #
@@ -124,12 +131,18 @@ class Agent():
 
 		i = 0
 		for replay_index in replay_batch_indices:
-			_, action, reward, _, done = self.replays[replay_index]
+			_, action, reward, _, done, _ = self.replays[replay_index]
 
 			target = reward
 			if not done:
 				max_value_action = np.argmax(p_[i])
 				target += self.gamma*p2_[i][max_value_action]
+
+			# replace error value in replay with updated amount
+			new_error = abs(p[i][action] - target)
+			self.total_replay_error -= self.replays[replay_index][5]
+			self.total_replay_error += new_error
+			self.replays[replay_index][5] = new_error
 
 			p[i][action] = target
 			i += 1
@@ -141,8 +154,7 @@ class Agent():
 		state = self.env.reset()
 
 		for t in range(self.max_steps_per_episode):
-			if t > 3000:
-				self.env.render()
+			self.env.render()
 
 			action = self.get_action(state)
 			state_next, reward, done, info = self.env.step(action)
