@@ -192,6 +192,6 @@ class Agent():
 #     reward_threshold=195.0,
 # )
 
-agent = Agent('CartPole-v1', simple, monitor=True)
+agent = Agent('CartPole-v1', simple)
 
 agent.play()
