@@ -16,24 +16,7 @@ from keras.optimizers import rmsprop
 import gym
 from gym import wrappers
 
-###########################
-### Model Configuration ### 
-###########################
-
-def simple(num_actions, state_shape):
-	model = Sequential()
-
-	model.add(Dense(64, input_shape=state_shape, activation='relu'))
-
-	# Max of this will be the action we take
-	model.add(Dense(num_actions, activation='linear'))
-
-	optimizer = rmsprop(lr=0.00025, decay=1e-6)
-	model.compile(optimizer=optimizer, loss='mse')
-
-	model.summary()
-
-	return model
+from models import simple, conv
 
 ############################################
 ### Reinforcement Learning Configuration ###
@@ -71,6 +54,7 @@ class Agent():
 		self.replays_full = False
 
 		# prioritized proportional experience replay
+		self.default_error = 1.0
 		self.total_replay_error = 0.0
 
 	#################
@@ -89,17 +73,21 @@ class Agent():
 
 	def add_replay(self, state, action, reward, state_next, done):
 		self.total_replay_error -= self.replays[self.replay_n % self.replay_capacity][5] # remove error from replaced
-		self.total_replay_error += reward
-		self.replays[self.replay_n % self.replay_capacity] = np.array([state, action, reward, state_next, done, reward])
+		self.total_replay_error += self.default_error
+		replay = np.array([state, action, reward, state_next, done, self.default_error])
+		self.replays[self.replay_n % self.replay_capacity] = replay
 		self.replay_n += 1
 
 
 	def select_replay_indices(self):
 		batch_size = min(self.batch_size, self.replay_n)
 		n = min(self.replay_n, self.replay_capacity)
-		replay_errors = self.replays[:n][:, 5]
-		prioritization = np.multiply(replay_errors, 1/self.total_replay_error).astype(float)
-		return np.random.choice(n, size=batch_size, replace=False, p=prioritization)
+		if self.total_replay_error != 0.0:
+			replay_errors = self.replays[:n][:, 5]
+			prioritization = np.multiply(replay_errors, 1/self.total_replay_error).astype(float)
+			return np.random.choice(n, size=batch_size, replace=False, p=prioritization)
+		else:
+			return np.random.choice(n, size=batch_size, replace=False)
 
 	#######################
 	# Acting and Learning #
@@ -181,17 +169,3 @@ class Agent():
 			if self.epsilon > self.min_epsilon:
 				self.epsilon = self.epsilon_decay(self.epsilon)
 
-##############################
-### Create and run learner ###
-##############################
-
-# gym.envs.register(
-#     id='CartPole-v2',
-#     entry_point='gym.envs.classic_control:CartPoleEnv',
-#     tags={'wrapper_config.TimeLimit.max_episode_steps': 100000},
-#     reward_threshold=195.0,
-# )
-
-agent = Agent('CartPole-v1', simple)
-
-agent.play()
