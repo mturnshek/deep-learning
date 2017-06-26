@@ -1,26 +1,35 @@
-function brain(state_dim, num_actions) {
-	let env = {};
-	env.getNumStates = function() { return state_dim; }
-	env.getMaxNumActions = function() { return num_actions; }
+function brain(num_inputs, num_actions) {
+	let temporal_window = 0; // amount of temporal memory. 0 = agent lives in-the-moment :)
+	let network_size = num_inputs*temporal_window + num_actions*temporal_window + num_inputs;
 
-	let spec = {};
-	spec.update = 'qlearn'; // qlearn | sarsa
-	spec.gamma = 0.99; // discount factor, [0, 1)
-	spec.epsilon = 0.99; // initial epsilon for epsilon-greedy policy, [0, 1)
-	spec.experience_add_every = 1; // number of time steps before we add another experience to replay memory
-	spec.experience_size = 10000; // size of experience
-	spec.learning_steps_per_iteration = 20;
-	spec.tderror_clamp = 1.0; // for robustness
-	spec.num_hidden_units = 256 // number of neurons in hidden layer
+	// the value function network computes a value of taking any of the possible actions
+	// given an input state. Here we specify one explicitly the hard way
+	// but user could also equivalently instead use opt.hidden_layer_sizes = [20,20]
+	// to just insert simple relu hidden layers.
+	let layer_defs = [];
+	layer_defs.push({type:'input', out_sx:1, out_sy:1, out_depth:network_size});
+	layer_defs.push({type:'fc', num_neurons: 100, activation:'relu'});
+	//layer_defs.push({type:'fc', num_neurons: 100, activation:'relu'});
+	layer_defs.push({type:'regression', num_neurons:num_actions});
 
-	return new RL.DQNAgent(env, spec);
+	// options for the Temporal Difference learner that trains the above net
+	// by backpropping the temporal difference learning rule.
+	let tdtrainer_options = {learning_rate:0.001, momentum:0.0, batch_size:16, l2_decay:0.01};
+
+	let opt = {};
+	opt.temporal_window = temporal_window;
+	opt.experience_size = 100000;
+	opt.start_learn_threshold = 1000;
+	opt.gamma = 0.8;
+	opt.learning_steps_total = 8000000;
+	opt.learning_steps_burnin = 50000;
+	opt.epsilon_min = 0.05;
+	opt.epsilon_test_time = 0.05;
+	opt.layer_defs = layer_defs;
+	opt.tdtrainer_options = tdtrainer_options;
+
+	return new deepqlearn.Brain(num_inputs, num_actions, opt); // woohoo
 }
-
-
-function epsilon_decay(x) {
-	return x * .9999;
-}
-
 
 class Environment {
 	constructor() {
@@ -44,7 +53,7 @@ class Environment {
 		let x = 0;
 		let y = 0;
 
-		this.state_dim = (num_red + num_green) * 4; // x, y, dx, dy for red, green
+		this.state_dim = (num_red + num_green) * 2; // x, y for red, green
 
 		// Create the predators
 		let i = 0;
@@ -86,13 +95,9 @@ class Environment {
 			if (ball.id == ball_id) {
 				self_perception.push(ball.x);
 				self_perception.push(ball.y);
-				self_perception.push(ball.dx);
-				self_perception.push(ball.dy);
 			} else {
 				others_perception.push(ball.x);
 				others_perception.push(ball.y);
-				others_perception.push(ball.dx);
-				others_perception.push(ball.dy);
 			}
 		}
 		
@@ -307,8 +312,8 @@ class Ball {
 		if (this.sentient) {
 			// Choose an action
 			let state = [];
-			let action = this.brain.act(state);
-			
+			let action = this.brain.forward(state);
+
 			// Update the environment
 			this.decide(action);
 			this.move();
@@ -317,10 +322,7 @@ class Ball {
 			// Reward the action
 			let reward = this.environment.get_reward(this.id);
 
-			this.brain.learn(reward);
-
-			// Reduce epsilon
-			this.brain.epsilon = epsilon_decay(this.brain.epsilon);
+			this.brain.backward(reward);
 		}
 	}
 }
